@@ -16,7 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.manifold import TSNE
 from sklearn.neighbors import KNeighborsClassifier
-import mplcursors  # For interactive tooltip on line plot
+import mplcursors
 
 # Load the Data
 path = kagglehub.dataset_download("dhanushnarayananr/credit-card-fraud")
@@ -47,7 +47,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 print("Train Set Fraud 비율:\n", y_train.value_counts(normalize=True))
 print("Test Set Fraud 비율:\n", y_test.value_counts(normalize=True))
 
-# Define Shiny UI with additional explanations and x-axis choice menu.
+# Define Shiny UI with dynamic conditional UI components.
 app_ui = ui.page_fluid(
     ui.h2("Credit Card Fraud Detection App"),
     ui.p("Select the model, adjust parameters, and choose whether to use Train-Test Split."),
@@ -55,44 +55,68 @@ app_ui = ui.page_fluid(
     ui.input_checkbox("use_split", "Use Train-Test Split", value=True),
     ui.input_slider("param_value", "Parameter Value (for ccp_alpha in DT or base factor for RF)", 0.0, 0.2, 0.01, step=0.001),
     ui.p("For DT: ccp_alpha controls tree complexity. For RF: used to compute max_features."),
-    ui.input_slider("max_depth", "Max Depth (DT)", 1, 20, 5, step=1),
-    ui.p("Maximum depth of the tree (limits how deep the tree grows)."),
-    ui.input_slider("n_estimators", "Number of Estimators (RF)", 50, 500, 100, step=10),
-    ui.p("Number of trees in the forest (RF)."),
-    ui.input_select("xaxis_choice", "Select X-axis for Accuracy Curve",
-                    {"ccp_alpha": "Parameter Value (ccp_alpha)",
-                     "max_depth": "Max Depth",
-                     "n_estimators": "Number of Estimators"}),
-    ui.p("Select which parameter to vary on the x-axis for the accuracy curve. For DT, choose between ccp_alpha and max_depth. For RF, choose between ccp_alpha and number of estimators."),
+    ui.output_ui("conditional_sliders"),
+    ui.output_ui("xaxis_choice_ui"),
     ui.output_plot("model_plot"),
     ui.output_text_verbatim("model_info"),
-    ui.output_ui("model_eval")  # 변경: HTML 출력을 위해 output_ui 사용
+    ui.output_ui("model_eval")  # HTML UI output for evaluation table
 )
 
-# Helper: Build HTML table for confusion matrix and metrics with tooltips.
-def build_confusion_metrics_table(y_true, y_pred):
-    cm = confusion_matrix(y_true, y_pred)
-    tn, fp, fn, tp = cm.ravel()
-    acc = accuracy_score(y_true, y_pred)
-    prec = precision_score(y_true, y_pred)
-    rec = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
-    # 각 평가지표를 tooltip을 포함한 HTML 태그로 작성
-    acc_html = f'<span title="Accuracy: The proportion of total predictions that were correct.">{acc:.4f}</span>'
-    prec_html = f'<span title="Precision: The proportion of positive predictions that were correct.">{prec:.4f}</span>'
-    rec_html = f'<span title="Recall: The proportion of actual positives correctly predicted.">{rec:.4f}</span>'
-    f1_html = f'<span title="F1-Score: The harmonic mean of precision and recall.">{f1:.4f}</span>'
-    # 4x4 표 구성: 첫 두 행은 confusion matrix, 나머지 행은 평가 지표 예시
-    data = {
-        "Predicted 0": [tn, fn, acc_html, rec_html],
-        "Predicted 1": [fp, tp, prec_html, f1_html]
-    }
-    index = ["Actual 0", "Actual 1", "Overall Metric 1", "Overall Metric 2"]
-    table_df = pd.DataFrame(data, index=index)
-    return table_df.to_html(escape=False, index=True)
-
-# Server function
+# Server: Create dynamic conditional UI based on model_type using ui.TagList
 def server(input, output, session):
+
+    @output
+    @render.ui
+    def conditional_sliders():
+        if input.model_type() == "dt":
+            return ui.TagList(
+                ui.input_slider("max_depth", "Max Depth (DT)", 1, 20, 5, step=1),
+                ui.p("Maximum depth of the tree (limits how deep the tree grows).")
+            )
+        elif input.model_type() == "rf":
+            return ui.TagList(
+                ui.input_slider("n_estimators", "Number of Estimators (RF)", 50, 500, 100, step=10),
+                ui.p("Number of trees in the forest (RF).")
+            )
+        else:
+            return ui.TagList()
+
+    @output
+    @render.ui
+    def xaxis_choice_ui():
+        if input.model_type() == "dt":
+            return ui.input_select("xaxis_choice", "Select X-axis for Accuracy Curve",
+                                     {"ccp_alpha": "Parameter Value (ccp_alpha)", "max_depth": "Max Depth"})
+        elif input.model_type() == "rf":
+            return ui.input_select("xaxis_choice", "Select X-axis for Accuracy Curve",
+                                     {"ccp_alpha": "Parameter Value (ccp_alpha)", "n_estimators": "Number of Estimators"})
+        else:
+            return ui.TagList()
+
+    # Helper: Build HTML table for confusion matrix and metrics with tooltips.
+    def build_confusion_metrics_table(y_true, y_pred, y_prob):
+        cm = confusion_matrix(y_true, y_pred)
+        tn, fp, fn, tp = cm.ravel()
+        acc = accuracy_score(y_true, y_pred)
+        prec = precision_score(y_true, y_pred)
+        rec = recall_score(y_true, y_pred)
+        f1_val = f1_score(y_true, y_pred)
+        aucroc = roc_auc_score(y_true, y_prob)
+        acc_html = f'<span title="Accuracy: The proportion of total predictions that were correct.">{acc:.4f}</span>'
+        prec_html = f'<span title="Precision: The proportion of positive predictions that were correct.">{prec:.4f}</span>'
+        rec_html = f'<span title="Recall: The proportion of actual positives correctly predicted.">{rec:.4f}</span>'
+        f1_html = f'<span title="F1-Score: The harmonic mean of precision and recall.">{f1_val:.4f}</span>'
+        auc_html = f'<span title="AUC-ROC: The Area Under the ROC Curve.">{aucroc:.4f}</span>'
+        data_cm = {"Predicted 0": [tn, fn],
+                   "Predicted 1": [fp, tp]}
+        index_cm = ["Actual 0", "Actual 1"]
+        df_cm = pd.DataFrame(data_cm, index=index_cm)
+        data_eval = {"Metric": ["Accuracy", "Precision", "Recall", "F1-score", "AUC-ROC"],
+                     "Value": [acc_html, prec_html, rec_html, f1_html, auc_html]}
+        df_eval = pd.DataFrame(data_eval)
+        html_out = df_cm.to_html(escape=False, index=True)
+        html_out += "<br>" + df_eval.to_html(escape=False, index=False)
+        return html_out
 
     def train_model(model_type, split, param_value, max_depth, n_estimators):
         if split:
@@ -113,12 +137,14 @@ def server(input, output, session):
             X_train_vis = pd.DataFrame(X_train_vis, columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
             X_test_vis = X_train_vis.copy()
         if model_type == "dt":
+            max_depth_val = max_depth if max_depth is not None else 5
             model = DecisionTreeClassifier(ccp_alpha=param_value,
-                                           max_depth=max_depth,
+                                           max_depth=max_depth_val,
                                            random_state=42)
         else:
+            n_estimators_val = n_estimators if n_estimators is not None else 100
             max_features_val = max(1, int(param_value * X_train_full.shape[1]))
-            model = RandomForestClassifier(n_estimators=n_estimators,
+            model = RandomForestClassifier(n_estimators=n_estimators_val,
                                            max_features=max_features_val,
                                            random_state=42, oob_score=True)
         model.fit(X_train_full, y_train_full)
@@ -178,7 +204,9 @@ def server(input, output, session):
     @render.plot
     def model_plot():
         model_pack = train_model(input.model_type(), input.use_split(),
-                                 input.param_value(), input.max_depth(), input.n_estimators())
+                                 input.param_value(),
+                                 input.max_depth() if input.model_type() == "dt" else None,
+                                 input.n_estimators() if input.model_type() == "rf" else None)
         model_inst, X_train_full, y_train_full, X_test_full, y_test_full, X_train_vis, X_test_vis = model_pack
         fig = plt.figure(figsize=(16,14))
         # Upper subplot: Scatter plot & Decision boundary
@@ -209,66 +237,58 @@ def server(input, output, session):
 
         # Lower subplot: Accuracy Curve vs selected parameter
         ax2 = fig.add_subplot(2,1,2)
-        param_vals, acc_train_list, acc_test_list = plot_accuracy_curve(input.xaxis_choice(),
+        xaxis_choice = input.xaxis_choice()
+        param_vals, acc_train_list, acc_test_list = plot_accuracy_curve(xaxis_choice,
                                                                          input.model_type(),
                                                                          input.use_split(),
-                                                                         input.max_depth(),
-                                                                         input.n_estimators())
+                                                                         input.max_depth() if input.model_type() == "dt" else None,
+                                                                         input.n_estimators() if input.model_type() == "rf" else None)
         ax2.plot(param_vals, acc_train_list, label="Train Accuracy", color='green', marker='o')
         ax2.plot(param_vals, acc_test_list, label="Test Accuracy", color='purple', marker='o')
-        if input.xaxis_choice() == "ccp_alpha":
+        if xaxis_choice == "ccp_alpha":
             current_val = input.param_value()
-        elif input.xaxis_choice() == "max_depth":
+        elif xaxis_choice == "max_depth":
             current_val = input.max_depth()
-        elif input.xaxis_choice() == "n_estimators":
+        elif xaxis_choice == "n_estimators":
             current_val = input.n_estimators()
         idx = (np.abs(param_vals - current_val)).argmin()
         ax2.plot(param_vals[idx], acc_train_list[idx], marker='o', markersize=12, color='darkgreen')
         ax2.plot(param_vals[idx], acc_test_list[idx], marker='o', markersize=12, color='darkviolet')
-        ax2.set_xlabel(f"{input.xaxis_choice()}")
+        ax2.set_xlabel(f"{xaxis_choice}")
         ax2.set_ylabel("Accuracy")
-        ax2.set_title("Accuracy vs " + f"{input.xaxis_choice()}")
+        ax2.set_title("Accuracy vs " + f"{xaxis_choice}")
         ax2.legend()
         plt.subplots_adjust(hspace=0.5, bottom=0.15)
         mplcursors.cursor(ax2.get_lines(), hover=True)
         return fig
 
     @output
-    @render.text
-    def model_info():
-        model_pack = train_model(input.model_type(), input.use_split(),
-                                 input.param_value(), input.max_depth(), input.n_estimators())
-        if input.use_split():
-            y_train_pred = model_pack[0].predict(model_pack[1])
-            y_test_pred = model_pack[0].predict(model_pack[3])
-            cm_train = confusion_matrix(model_pack[2], y_train_pred)
-            cm_test = confusion_matrix(model_pack[4], y_test_pred)
-            info = ("--- TRAINING SET ---\n"
-                    f"Confusion Matrix:\n{cm_train}\n"
-                    "--- TEST SET ---\n"
-                    f"Confusion Matrix:\n{cm_test}\n")
-        else:
-            y_pred = model_pack[0].predict(model_pack[1])
-            cm = confusion_matrix(model_pack[2], y_pred)
-            info = ("--- FULL DATA (No Train-Test Split) ---\n"
-                    f"Confusion Matrix:\n{cm}\n")
-        return info
-
-    @output
     @render.ui
     def model_eval():
         model_pack = train_model(input.model_type(), input.use_split(),
-                                 input.param_value(), input.max_depth(), input.n_estimators())
+                                 input.param_value(),
+                                 input.max_depth() if input.model_type() == "dt" else None,
+                                 input.n_estimators() if input.model_type() == "rf" else None)
         if input.use_split():
             y_train_pred = model_pack[0].predict(model_pack[1])
             y_test_pred = model_pack[0].predict(model_pack[3])
-            table_train = build_confusion_metrics_table(model_pack[2], y_train_pred)
-            table_test = build_confusion_metrics_table(model_pack[4], y_test_pred)
-            combined = table_train + "<br><br>" + table_test
+            y_train_prob = model_pack[0].predict_proba(model_pack[1])[:, 1]
+            y_test_prob = model_pack[0].predict_proba(model_pack[3])[:, 1]
+            html_train = build_confusion_metrics_table(model_pack[2], y_train_pred, y_train_prob)
+            html_test = build_confusion_metrics_table(model_pack[4], y_test_pred, y_test_prob)
+            combined = html_train + "<br><br>" + html_test
             return ui.HTML(combined)
         else:
-            table_full = build_confusion_metrics_table(model_pack[2], model_pack[0].predict(model_pack[1]))
-            return ui.HTML(table_full)
+            y_pred = model_pack[0].predict(model_pack[1])
+            y_prob = model_pack[0].predict_proba(model_pack[1])[:, 1]
+            html_full = build_confusion_metrics_table(model_pack[2], y_pred, y_prob)
+            return ui.HTML(html_full)
+
+    @output
+    @render.text
+    def model_info():
+        # 기존 print형 혼동행렬 출력은 삭제합니다.
+        return ""
 
 import nest_asyncio
 nest_asyncio.apply()
