@@ -61,7 +61,7 @@ app_ui = ui.page_fluid(
     ui.input_checkbox("use_split", "Use Train-Test Split", value=True),
     # 별도의 파라미터 슬라이더 분리: DT용과 RF용
     ui.output_ui("parameter_slider_ui"),
-    ui.p("For DT: 'ccp_alpha (DT)' controls tree complexity. For RF: 'Base Factor (RF)' is used to compute max_features."),
+    # ui.p("For DT: 'ccp_alpha (DT)' controls tree complexity. For RF: 'Base Factor (RF)' is used to compute max_features."),
     # 조건부 슬라이더: DT 전용은 Max Depth, RF 전용은 Number of Estimators
     ui.output_ui("conditional_sliders"),
     # 동적 x축 선택 메뉴
@@ -79,12 +79,14 @@ def server(input, output, session):
         if input.model_type() == "dt":
             return ui.TagList(
                 ui.input_slider("dt_ccp_alpha", "ccp_alpha (DT)", 0.0, 0.2, 0.01, step=0.001),
+                ui.p("'ccp_alpha (DT)' controls tree complexity."),
                 disabled_slider("Base Factor (RF)", 0.0, 0.2, 0.01, 0.001)
             )
         elif input.model_type() == "rf":
             return ui.TagList(
                 disabled_slider("ccp_alpha (DT)", 0.0, 0.2, 0.01, 0.001),
-                ui.input_slider("rf_base_factor", "Base Factor (RF)", 0.0, 0.2, 0.01, step=0.001)
+                ui.input_slider("rf_base_factor", "Base Factor (RF)", 0.0, 0.2, 0.01, step=0.001),
+                ui.p("'Base Factor (RF)' is used to compute max_features.")
             )
         else:
             return ui.TagList()
