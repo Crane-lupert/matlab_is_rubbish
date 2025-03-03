@@ -47,7 +47,15 @@ X_train, X_test, y_train, y_test = train_test_split(
 print("Train Set Fraud 비율:\n", y_train.value_counts(normalize=True))
 print("Test Set Fraud 비율:\n", y_test.value_counts(normalize=True))
 
-# Define Shiny UI with dynamic conditional UI components.
+# 헬퍼 함수: inactive 슬라이더 생성 (HTML disabled slider)
+def disabled_slider(label, min_val, max_val, value, step):
+    html_str = f'''
+    <label>{label}</label><br>
+    <input type="range" min="{min_val}" max="{max_val}" value="{value}" step="{step}" disabled style="width:100%"><br>
+    '''
+    return ui.HTML(html_str)
+
+# Define Shiny UI with dynamic conditional UI for sliders and x-axis selection.
 app_ui = ui.page_fluid(
     ui.h2("Credit Card Fraud Detection App"),
     ui.p("Select the model, adjust parameters, and choose whether to use Train-Test Split."),
@@ -62,7 +70,7 @@ app_ui = ui.page_fluid(
     ui.output_ui("model_eval")  # HTML UI output for evaluation table
 )
 
-# Server: Create dynamic conditional UI based on model_type using ui.TagList
+# Server: 동적으로 조건부 UI 생성 (using ui.TagList)
 def server(input, output, session):
 
     @output
@@ -71,10 +79,14 @@ def server(input, output, session):
         if input.model_type() == "dt":
             return ui.TagList(
                 ui.input_slider("max_depth", "Max Depth (DT)", 1, 20, 5, step=1),
-                ui.p("Maximum depth of the tree (limits how deep the tree grows).")
+                ui.p("Maximum depth of the tree (limits how deep the tree grows)."),
+                disabled_slider("Number of Estimators (RF)", 50, 500, 100, 10),
+                ui.p("Number of trees in the forest (RF) (disabled).")
             )
         elif input.model_type() == "rf":
             return ui.TagList(
+                disabled_slider("Max Depth (DT)", 1, 20, 5, 1),
+                ui.p("Maximum depth of the tree (limits how deep the tree grows) (disabled)."),
                 ui.input_slider("n_estimators", "Number of Estimators (RF)", 50, 500, 100, step=10),
                 ui.p("Number of trees in the forest (RF).")
             )
