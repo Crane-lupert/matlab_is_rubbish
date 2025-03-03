@@ -21,18 +21,24 @@ import mplcursors
 path = kagglehub.dataset_download("dhanushnarayananr/credit-card-fraud")
 print("Path to dataset files:", path)
 df = pd.read_csv(path + "/card_transdata.csv")
+
+# Down Sampling: total 400
 df_class0 = df[df["fraud"] == 0].sample(n=200, random_state=42)
 df_class1 = df[df["fraud"] == 1].sample(n=200, random_state=42)
 df_balanced = pd.concat([df_class0, df_class1]).reset_index(drop=True)
+
 from scipy.stats import skew
 print("Skewness of distance_from_home:", skew(df_balanced["distance_from_home"]))
 print("Skewness of distance_from_last_transaction:", skew(df_balanced["distance_from_last_transaction"]))
+
 df_balanced["distance_from_home"] = np.log1p(df_balanced["distance_from_home"])
 df_balanced["distance_from_last_transaction"] = np.log1p(df_balanced["distance_from_last_transaction"])
 scaler_std = StandardScaler()
 df_balanced["ratio_to_median_purchase_price"] = scaler_std.fit_transform(df_balanced[["ratio_to_median_purchase_price"]])
+
 X = df_balanced.drop(columns=["fraud"])
 y = df_balanced["fraud"]
+
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
@@ -53,7 +59,7 @@ app_ui = ui.page_fluid(
     ui.p("Select the model, adjust parameters, and choose whether to use Train-Test Split."),
     ui.input_select("model_type", "Select Model", {"dt": "Decision Tree", "rf": "Random Forest"}),
     ui.input_checkbox("use_split", "Use Train-Test Split", value=True),
-    # 두 개의 파라미터 슬라이더 분리: DT용과 RF용
+    # 별도의 파라미터 슬라이더 분리: DT용과 RF용
     ui.output_ui("parameter_slider_ui"),
     ui.p("For DT: 'ccp_alpha (DT)' controls tree complexity. For RF: 'Base Factor (RF)' is used to compute max_features."),
     # 조건부 슬라이더: DT 전용은 Max Depth, RF 전용은 Number of Estimators
@@ -113,6 +119,7 @@ def server(input, output, session):
         else:
             return ui.TagList()
 
+    # Helper: Build HTML table for confusion matrix and metrics with tooltips.
     def build_confusion_metrics_table(y_true, y_pred, y_prob):
         cm = confusion_matrix(y_true, y_pred)
         tn, fp, fn, tp = cm.ravel()
@@ -137,23 +144,31 @@ def server(input, output, session):
         html_out += "<br>" + df_eval.to_html(escape=False, index=False)
         return html_out
 
-    def train_model(model_type, split, dt_ccp_alpha, rf_base_factor, max_depth, n_estimators):
+    # TSNE를 적용할 때, 학습과 테스트 데이터를 합친 후 "source" 컬럼으로 분리하여 순서를 보존합니다.
+    def train_model_wrapper(model_type, split, dt_ccp_alpha, rf_base_factor, max_depth, n_estimators):
         if split:
             X_train_full = X_train.reset_index(drop=True)
             y_train_full = y_train.reset_index(drop=True)
             X_test_full = X_test.reset_index(drop=True)
             y_test_full = y_test.reset_index(drop=True)
-            X_train_vis = TSNE(n_components=2, random_state=42).fit_transform(X_train_full)
-            X_train_vis = pd.DataFrame(X_train_vis, columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
-            X_test_vis = TSNE(n_components=2, random_state=42).fit_transform(X_test_full)
-            X_test_vis = pd.DataFrame(X_test_vis, columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
+            # 원본 데이터에 source 컬럼 추가
+            X_train_full = X_train_full.copy()
+            X_test_full = X_test_full.copy()
+            X_train_full["source"] = "train"
+            X_test_full["source"] = "test"
+            combined = pd.concat([X_train_full, X_test_full], axis=0)
+            tsne_result = TSNE(n_components=2, random_state=42).fit_transform(combined.drop(columns="source"))
+            # source 정보를 유지
+            source = combined["source"].values
+            X_train_vis = pd.DataFrame(tsne_result[source=="train"], columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
+            X_test_vis = pd.DataFrame(tsne_result[source=="test"], columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
         else:
             X_train_full = X.reset_index(drop=True)
             y_train_full = y.reset_index(drop=True)
             X_test_full = X.reset_index(drop=True)
             y_test_full = y.reset_index(drop=True)
-            X_train_vis = TSNE(n_components=2, random_state=42).fit_transform(X_train_full)
-            X_train_vis = pd.DataFrame(X_train_vis, columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
+            tsne_result = TSNE(n_components=2, random_state=42).fit_transform(X_train_full)
+            X_train_vis = pd.DataFrame(tsne_result, columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
             X_test_vis = X_train_vis.copy()
         if model_type == "dt":
             param_val = dt_ccp_alpha
@@ -168,8 +183,16 @@ def server(input, output, session):
             model = RandomForestClassifier(n_estimators=n_estimators_val,
                                            max_features=max_features_val,
                                            random_state=42, oob_score=True)
+        X_train_full.drop(columns="source", errors="ignore", inplace=True)
+        X_test_full.drop(columns="source", errors="ignore", inplace=True)
+        X_train_vis.drop(columns="source", errors="ignore", inplace=True)
+        X_test_vis.drop(columns="source", errors="ignore", inplace=True)
         model.fit(X_train_full, y_train_full)
+        # model.fit(X_train_full.drop(columns="source", errors="ignore"), y_train_full)
         return (model, X_train_full, y_train_full, X_test_full, y_test_full, X_train_vis, X_test_vis)
+
+    def train_model(model_type, split, dt_ccp_alpha, rf_base_factor, max_depth, n_estimators):
+        return train_model_wrapper(model_type, split, dt_ccp_alpha, rf_base_factor, max_depth, n_estimators)
 
     def plot_decision_boundary(model, X_origin, X_vis):
         Z_pred = model.predict(X_origin)
