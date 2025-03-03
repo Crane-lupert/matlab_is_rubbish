@@ -2,7 +2,6 @@
 #!pip install shiny
 #!pip install mplcursors
 
-# Import necessary libraries
 import kagglehub
 import pandas as pd
 import numpy as np
@@ -18,27 +17,20 @@ from sklearn.manifold import TSNE
 from sklearn.neighbors import KNeighborsClassifier
 import mplcursors
 
-# Load the Data
+# Data Loading & Preprocessing
 path = kagglehub.dataset_download("dhanushnarayananr/credit-card-fraud")
 print("Path to dataset files:", path)
 df = pd.read_csv(path + "/card_transdata.csv")
-
-# Down Sampling: total 400
 df_class0 = df[df["fraud"] == 0].sample(n=200, random_state=42)
 df_class1 = df[df["fraud"] == 1].sample(n=200, random_state=42)
 df_balanced = pd.concat([df_class0, df_class1]).reset_index(drop=True)
-
 from scipy.stats import skew
 print("Skewness of distance_from_home:", skew(df_balanced["distance_from_home"]))
 print("Skewness of distance_from_last_transaction:", skew(df_balanced["distance_from_last_transaction"]))
-
-# Log Transformation and Scaling
 df_balanced["distance_from_home"] = np.log1p(df_balanced["distance_from_home"])
 df_balanced["distance_from_last_transaction"] = np.log1p(df_balanced["distance_from_last_transaction"])
 scaler_std = StandardScaler()
 df_balanced["ratio_to_median_purchase_price"] = scaler_std.fit_transform(df_balanced[["ratio_to_median_purchase_price"]])
-
-# Train/Test Split
 X = df_balanced.drop(columns=["fraud"])
 y = df_balanced["fraud"]
 X_train, X_test, y_train, y_test = train_test_split(
@@ -47,7 +39,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 print("Train Set Fraud 비율:\n", y_train.value_counts(normalize=True))
 print("Test Set Fraud 비율:\n", y_test.value_counts(normalize=True))
 
-# 헬퍼 함수: inactive 슬라이더 생성 (HTML disabled slider)
+# Helper: Disabled slider HTML
 def disabled_slider(label, min_val, max_val, value, step):
     html_str = f'''
     <label>{label}</label><br>
@@ -55,23 +47,41 @@ def disabled_slider(label, min_val, max_val, value, step):
     '''
     return ui.HTML(html_str)
 
-# Define Shiny UI with dynamic conditional UI for sliders and x-axis selection.
+# Define UI with dynamic conditional UI components.
 app_ui = ui.page_fluid(
     ui.h2("Credit Card Fraud Detection App"),
     ui.p("Select the model, adjust parameters, and choose whether to use Train-Test Split."),
     ui.input_select("model_type", "Select Model", {"dt": "Decision Tree", "rf": "Random Forest"}),
     ui.input_checkbox("use_split", "Use Train-Test Split", value=True),
-    ui.input_slider("param_value", "Parameter Value (for ccp_alpha in DT or base factor for RF)", 0.0, 0.2, 0.01, step=0.001),
-    ui.p("For DT: ccp_alpha controls tree complexity. For RF: used to compute max_features."),
+    # 두 개의 파라미터 슬라이더 분리: DT용과 RF용
+    ui.output_ui("parameter_slider_ui"),
+    ui.p("For DT: 'ccp_alpha (DT)' controls tree complexity. For RF: 'Base Factor (RF)' is used to compute max_features."),
+    # 조건부 슬라이더: DT 전용은 Max Depth, RF 전용은 Number of Estimators
     ui.output_ui("conditional_sliders"),
+    # 동적 x축 선택 메뉴
     ui.output_ui("xaxis_choice_ui"),
     ui.output_plot("model_plot"),
     ui.output_text_verbatim("model_info"),
-    ui.output_ui("model_eval")  # HTML UI output for evaluation table
+    ui.output_ui("model_eval")
 )
 
-# Server: 동적으로 조건부 UI 생성 (using ui.TagList)
 def server(input, output, session):
+
+    @output
+    @render.ui
+    def parameter_slider_ui():
+        if input.model_type() == "dt":
+            return ui.TagList(
+                ui.input_slider("dt_ccp_alpha", "ccp_alpha (DT)", 0.0, 0.2, 0.01, step=0.001),
+                disabled_slider("Base Factor (RF)", 0.0, 0.2, 0.01, 0.001)
+            )
+        elif input.model_type() == "rf":
+            return ui.TagList(
+                disabled_slider("ccp_alpha (DT)", 0.0, 0.2, 0.01, 0.001),
+                ui.input_slider("rf_base_factor", "Base Factor (RF)", 0.0, 0.2, 0.01, step=0.001)
+            )
+        else:
+            return ui.TagList()
 
     @output
     @render.ui
@@ -80,13 +90,11 @@ def server(input, output, session):
             return ui.TagList(
                 ui.input_slider("max_depth", "Max Depth (DT)", 1, 20, 5, step=1),
                 ui.p("Maximum depth of the tree (limits how deep the tree grows)."),
-                disabled_slider("Number of Estimators (RF)", 50, 500, 100, 10),
-                ui.p("Number of trees in the forest (RF) (disabled).")
+                disabled_slider("Number of Estimators (RF)", 50, 500, 100, 10)
             )
         elif input.model_type() == "rf":
             return ui.TagList(
                 disabled_slider("Max Depth (DT)", 1, 20, 5, 1),
-                ui.p("Maximum depth of the tree (limits how deep the tree grows) (disabled)."),
                 ui.input_slider("n_estimators", "Number of Estimators (RF)", 50, 500, 100, step=10),
                 ui.p("Number of trees in the forest (RF).")
             )
@@ -98,14 +106,13 @@ def server(input, output, session):
     def xaxis_choice_ui():
         if input.model_type() == "dt":
             return ui.input_select("xaxis_choice", "Select X-axis for Accuracy Curve",
-                                     {"ccp_alpha": "Parameter Value (ccp_alpha)", "max_depth": "Max Depth"})
+                                     {"dt_ccp_alpha": "ccp_alpha (DT)", "max_depth": "Max Depth (DT)"})
         elif input.model_type() == "rf":
             return ui.input_select("xaxis_choice", "Select X-axis for Accuracy Curve",
-                                     {"ccp_alpha": "Parameter Value (ccp_alpha)", "n_estimators": "Number of Estimators"})
+                                     {"rf_base_factor": "Base Factor (RF)", "n_estimators": "Number of Estimators (RF)"})
         else:
             return ui.TagList()
 
-    # Helper: Build HTML table for confusion matrix and metrics with tooltips.
     def build_confusion_metrics_table(y_true, y_pred, y_prob):
         cm = confusion_matrix(y_true, y_pred)
         tn, fp, fn, tp = cm.ravel()
@@ -130,7 +137,7 @@ def server(input, output, session):
         html_out += "<br>" + df_eval.to_html(escape=False, index=False)
         return html_out
 
-    def train_model(model_type, split, param_value, max_depth, n_estimators):
+    def train_model(model_type, split, dt_ccp_alpha, rf_base_factor, max_depth, n_estimators):
         if split:
             X_train_full = X_train.reset_index(drop=True)
             y_train_full = y_train.reset_index(drop=True)
@@ -149,13 +156,15 @@ def server(input, output, session):
             X_train_vis = pd.DataFrame(X_train_vis, columns=['TSNE1', 'TSNE2']).reset_index(drop=True)
             X_test_vis = X_train_vis.copy()
         if model_type == "dt":
+            param_val = dt_ccp_alpha
             max_depth_val = max_depth if max_depth is not None else 5
-            model = DecisionTreeClassifier(ccp_alpha=param_value,
+            model = DecisionTreeClassifier(ccp_alpha=param_val,
                                            max_depth=max_depth_val,
                                            random_state=42)
         else:
+            param_val = rf_base_factor
             n_estimators_val = n_estimators if n_estimators is not None else 100
-            max_features_val = max(1, int(param_value * X_train_full.shape[1]))
+            max_features_val = max(1, int(param_val * X_train_full.shape[1]))
             model = RandomForestClassifier(n_estimators=n_estimators_val,
                                            max_features=max_features_val,
                                            random_state=42, oob_score=True)
@@ -173,55 +182,58 @@ def server(input, output, session):
         return (xx, yy, voronoiBackground)
 
     def plot_accuracy_curve(x_axis_choice, model_type, split, max_depth, n_estimators):
-        if x_axis_choice == "ccp_alpha":
+        acc_train_list, acc_test_list = [], []
+        if x_axis_choice == "dt_ccp_alpha":
             param_vals = np.linspace(0, 0.2, 21)
-            acc_train_list, acc_test_list = [], []
             for p in param_vals:
-                m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, p, max_depth, n_estimators)
+                m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, p, None, max_depth, None)
                 acc_train_list.append(accuracy_score(y_tr, m.predict(X_tr)))
                 acc_test_list.append(accuracy_score(y_te, m.predict(X_te)))
         elif x_axis_choice == "max_depth":
             if model_type == "dt":
                 param_vals = np.arange(1, 21)
-                acc_train_list, acc_test_list = [], []
                 for p in param_vals:
-                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, input.param_value(), p, n_estimators)
+                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, input.dt_ccp_alpha(), None, p, None)
                     acc_train_list.append(accuracy_score(y_tr, m.predict(X_tr)))
                     acc_test_list.append(accuracy_score(y_te, m.predict(X_te)))
             else:
-                param_vals = np.arange(50, 501, 10)
-                acc_train_list, acc_test_list = [], []
+                param_vals = []
+        elif x_axis_choice == "rf_base_factor":
+            if model_type == "rf":
+                param_vals = np.linspace(0, 0.2, 21)
                 for p in param_vals:
-                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, input.param_value(), max_depth, p)
+                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, None, p, max_depth, n_estimators)
                     acc_train_list.append(accuracy_score(y_tr, m.predict(X_tr)))
                     acc_test_list.append(accuracy_score(y_te, m.predict(X_te)))
+            else:
+                param_vals = []
         elif x_axis_choice == "n_estimators":
             if model_type == "rf":
                 param_vals = np.arange(50, 501, 10)
-                acc_train_list, acc_test_list = [], []
                 for p in param_vals:
-                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, input.param_value(), max_depth, p)
+                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, None, input.rf_base_factor(), max_depth, p)
                     acc_train_list.append(accuracy_score(y_tr, m.predict(X_tr)))
                     acc_test_list.append(accuracy_score(y_te, m.predict(X_te)))
             else:
-                param_vals = np.arange(1, 21)
-                acc_train_list, acc_test_list = [], []
-                for p in param_vals:
-                    m, X_tr, y_tr, X_te, y_te, _, _ = train_model(model_type, split, input.param_value(), p, n_estimators)
-                    acc_train_list.append(accuracy_score(y_tr, m.predict(X_tr)))
-                    acc_test_list.append(accuracy_score(y_te, m.predict(X_te)))
+                param_vals = []
+        else:
+            param_vals = []
         return param_vals, acc_train_list, acc_test_list
 
     @output
     @render.plot
     def model_plot():
-        model_pack = train_model(input.model_type(), input.use_split(),
-                                 input.param_value(),
+        if input.model_type() == "dt":
+            dt_val = input.dt_ccp_alpha()
+            rf_val = None
+        else:
+            dt_val = None
+            rf_val = input.rf_base_factor()
+        model_pack = train_model(input.model_type(), input.use_split(), dt_val, rf_val,
                                  input.max_depth() if input.model_type() == "dt" else None,
                                  input.n_estimators() if input.model_type() == "rf" else None)
         model_inst, X_train_full, y_train_full, X_test_full, y_test_full, X_train_vis, X_test_vis = model_pack
         fig = plt.figure(figsize=(16,14))
-        # Upper subplot: Scatter plot & Decision boundary
         ax1 = fig.add_subplot(2,1,1)
         if input.use_split():
             train_class0 = X_train_vis[y_train_full==0]
@@ -247,7 +259,6 @@ def server(input, output, session):
         ax1.set_ylabel("TSNE2")
         ax1.legend()
 
-        # Lower subplot: Accuracy Curve vs selected parameter
         ax2 = fig.add_subplot(2,1,2)
         xaxis_choice = input.xaxis_choice()
         param_vals, acc_train_list, acc_test_list = plot_accuracy_curve(xaxis_choice,
@@ -257,10 +268,12 @@ def server(input, output, session):
                                                                          input.n_estimators() if input.model_type() == "rf" else None)
         ax2.plot(param_vals, acc_train_list, label="Train Accuracy", color='green', marker='o')
         ax2.plot(param_vals, acc_test_list, label="Test Accuracy", color='purple', marker='o')
-        if xaxis_choice == "ccp_alpha":
-            current_val = input.param_value()
+        if xaxis_choice == "dt_ccp_alpha":
+            current_val = input.dt_ccp_alpha()
         elif xaxis_choice == "max_depth":
             current_val = input.max_depth()
+        elif xaxis_choice == "rf_base_factor":
+            current_val = input.rf_base_factor()
         elif xaxis_choice == "n_estimators":
             current_val = input.n_estimators()
         idx = (np.abs(param_vals - current_val)).argmin()
@@ -277,8 +290,13 @@ def server(input, output, session):
     @output
     @render.ui
     def model_eval():
-        model_pack = train_model(input.model_type(), input.use_split(),
-                                 input.param_value(),
+        if input.model_type() == "dt":
+            dt_val = input.dt_ccp_alpha()
+            rf_val = None
+        else:
+            dt_val = None
+            rf_val = input.rf_base_factor()
+        model_pack = train_model(input.model_type(), input.use_split(), dt_val, rf_val,
                                  input.max_depth() if input.model_type() == "dt" else None,
                                  input.n_estimators() if input.model_type() == "rf" else None)
         if input.use_split():
@@ -299,7 +317,6 @@ def server(input, output, session):
     @output
     @render.text
     def model_info():
-        # 기존 print형 혼동행렬 출력은 삭제합니다.
         return ""
 
 import nest_asyncio
