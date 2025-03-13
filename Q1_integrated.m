@@ -1,46 +1,25 @@
-%% Group Coursework - Q1: VAR Modelling (Unified Code)
-% This unified script performs the following tasks:
-%
-% 1. Data Preparation and Portfolio Returns Calculation:
-%    - Reads adjusted closing prices from an Excel file.
-%    - Constructs dates using numeric month data.
-%    - Computes daily log returns and simple returns.
-%    - Builds an equally weighted portfolio.
-%
-% 2. Statistical Analysis of Portfolio Returns:
-%    - Computes descriptive statistics and displays a histogram for log returns.
-%    - Additional analyses for simple returns including:
-%         a) Min-Max scaled price plot.
-%         b) Cumulative returns and daily returns bar chart.
-%         c) Overlapped histograms (simple and log returns) with fitted Normal PDF and skewness annotation.
-%         d) QQ Plots for log and simple returns.
-%         e) Jarque-Bera test, empirical vs theoretical CDF plot, Kolmogorov-Smirnov test.
-%         f) Ljung-Box autocorrelation tests and Variance Ratio Test (if available).
-%
-% 3. 6-Month Rolling Window VaR Estimation and Backtesting:
-%    - For each day (starting July 1, 2014), using a 6-month rolling window,
-%      estimates 1-day VaR at 90% and 99% confidence levels with four methods:
-%         a) Historical Simulation (HS)
-%         b) Parametric Gaussian VaR
-%         c) Modified Historical Simulation (MHS) using EWMA weighting
-%         d) Monte Carlo VaR
-%    - Computes VaR violation counts.
-%    - Performs backtesting via Kupiec and Conditional Coverage tests.
-%
-% 4. Additional Section: 120-Day Rolling Window VaR Estimation:
-%    - Computes VaR using a 120-day window via:
-%         a) Parametric (Gaussian)
-%         b) Non-Parametric (HS)
-%         c) Modified HS (MHS)
-%         d) Monte Carlo methods.
-%    - Plots VaRs over time (90% confidence) and compares VaR vs. confidence level.
-%
+%% Group Coursework - Q1: VAR Modelling (Unified and Improved Code)
+% This script performs the following tasks:
+% 1. Data Preparation and Portfolio Returns Calculation.
+% 2. Statistical Analysis of Portfolio Returns including:
+%    - Descriptive statistics, histograms, QQ plots, CDF comparison, various tests.
+% 3. 6-Month Rolling Window VaR Estimation and Backtesting using four methods,
+%    with Kupiec and Christoffersen's Conditional Coverage tests.
+% 4. 120-Day Rolling Window VaR Estimation and comparison across methods.
 % 5. New Additions:
-%    A. Violation Count Bar Chart by Period (split at 31-Dec-2018) for 90% and 99% confidence.
-%    B. Time Series VaR Plot with Log Returns Overlay and Violation Highlight (90% confidence).
-%    C. Display Kupiec Test results in tables for 90% and 99% confidence.
+%    A. Enlarged histogram of the tail region of log returns.
+%    B. Separate autocorrelation plots for absolute and squared returns.
+%    C. Conditional Coverage Test results displayed in tables.
+%    D. Probability Integral Transform (PIT) analysis with KS test and histogram.
+%    E. VaR violation clustering analysis via stem plot.
 %
-% Note: Adjust file paths and parameters as needed.
+% Note: All generated figures are saved in the "image" folder.
+%       No plot title is added (to avoid layout inconsistencies); captions are provided via file names.
+
+%% Setup: Create "image" folder if it does not exist
+if ~exist('image','dir')
+    mkdir('image');
+end
 
 %% 1. Data Preparation and Portfolio Returns Calculation
 clear; close all; clc;
@@ -94,66 +73,78 @@ median_ret = median(portfolio_returns);
 fprintf('Descriptive Statistics (Log Returns):\nMean: %.4f, Std: %.4f, Median: %.4f, Min: %.4f, Max: %.4f\n',...
     mean_ret, std_ret, median_ret, min_ret, max_ret);
 
-figure('Color',[1 1 1]);
+figure; 
 histogram(portfolio_returns, 50, 'Normalization', 'pdf');
 xlabel('Log Portfolio Returns'); ylabel('Density');
-title('Histogram of Log Portfolio Returns');
+title('Histogram of Log Portfolio Returns');  % Added title
+% (Graph 1: Histogram of Log Portfolio Returns)
+saveas(gcf, fullfile('image', 'Graph1_Histogram_LogReturns.png'));
+close(gcf);
 
 % 2.2 Additional Analysis for Simple Returns
 % 2.2.1 Min-Max Scaled Prices Plot
 scaled_prices = (prices - min(prices)) ./ (max(prices) - min(prices));
-figure('Color',[1 1 1]);
+figure; 
 plot(dates_all, scaled_prices, 'LineWidth', 1.5);
 xlabel('Date'); ylabel('Scaled Price');
-title('Min-Max Scaled Prices for 6 Stocks');
 legend(tickers, 'Location', 'best');
+title('Min-Max Scaled Prices for 6 Stocks');  % Added title
+% (Graph 2: Min-Max Scaled Prices for 6 Stocks)
+saveas(gcf, fullfile('image', 'Graph2_MinMaxScaled_Prices.png'));
+close(gcf);
 
 % 2.2.2 Cumulative Returns and Daily Returns Bar Chart (Simple Returns)
 cumulative_returns_simple = cumprod(1 + portfolio_returns_simple);
-figure('Color',[1 1 1]);
+figure;
 subplot(2,1,1);
 plot(dates_returns, cumulative_returns_simple, 'LineWidth', 1.5);
 xlabel('Date'); ylabel('Cumulative Return');
-title('Cumulative Portfolio Returns (Simple Returns)');
 subplot(2,1,2);
 bar(dates_returns, portfolio_returns_simple);
 xlabel('Date'); ylabel('Daily Return');
-title('Daily Portfolio Returns (Simple Returns)');
+sgtitle('Cumulative and Daily Returns for Simple Returns');  % Added overall title
+% (Graph 3: Cumulative and Daily Returns for Simple Returns)
+saveas(gcf, fullfile('image', 'Graph3_Cumulative_DailyReturns_Simple.png'));
+close(gcf);
 
 % 2.2.3 Overlapped Histogram of Simple Returns with Normal PDF
-figure('Color',[1 1 1]);
+figure;
 histogram(portfolio_returns_simple, 50, 'Normalization','pdf'); hold on;
 x_vals_simple = linspace(min(portfolio_returns_simple), max(portfolio_returns_simple), 100);
 norm_pdf_simple = normpdf(x_vals_simple, mean(portfolio_returns_simple), std(portfolio_returns_simple));
 plot(x_vals_simple, norm_pdf_simple, 'r-', 'LineWidth',2);
 xlabel('Simple Portfolio Returns'); ylabel('Density');
-title('Overlapped Histogram of Simple Returns with Normal PDF');
 legend('Empirical','Normal PDF');
-skew_simple = skewness(portfolio_returns_simple);
-text(mean(portfolio_returns_simple), max(norm_pdf_simple)*0.9, sprintf('Skewness = %.4f', skew_simple), 'FontSize',12, 'Color','k');
+title('Overlapped Histogram of Simple Returns with Normal PDF');  % Added title
+% (Graph 4: Overlapped Histogram of Simple Returns with Normal PDF)
+saveas(gcf, fullfile('image', 'Graph4_SimpleReturns_Histogram_NormalPDF.png'));
+close(gcf);
 
 % 2.3 Overlapped Histogram of Log Returns with Normal PDF
-figure('Color',[1 1 1]);
+figure;
 histogram(portfolio_returns, 50, 'Normalization','pdf'); hold on;
 x_vals_log = linspace(min(portfolio_returns), max(portfolio_returns), 100);
 norm_pdf_log = normpdf(x_vals_log, mean_ret, std_ret);
 plot(x_vals_log, norm_pdf_log, 'r-', 'LineWidth',2);
 xlabel('Log Portfolio Returns'); ylabel('Density');
-title('Overlapped Histogram of Log Returns with Normal PDF');
 legend('Empirical','Normal PDF');
-skew_log = skewness(portfolio_returns);
-text(mean(portfolio_returns), max(norm_pdf_log)*0.9, sprintf('Skewness = %.4f', skew_log), 'FontSize',12, 'Color','k');
+title('Overlapped Histogram of Log Returns with Normal PDF');  % Added title
+% (Graph 5: Overlapped Histogram of Log Returns with Normal PDF)
+saveas(gcf, fullfile('image', 'Graph5_LogReturns_Histogram_NormalPDF.png'));
+close(gcf);
 
-% 2.4 QQ Plots for Log and Simple Returns with Annotation
-figure('Color',[1 1 1]);
+% 2.4 QQ Plots for Log and Simple Returns
+figure;
 subplot(1,2,1);
 qqplot(portfolio_returns);
-title('QQ Plot of Log Returns');
-text(min(portfolio_returns), max(portfolio_returns), sprintf('Skewness = %.4f', skew_log), 'FontSize',12, 'Color','b');
+xlabel('Theoretical Quantiles'); ylabel('Sample Quantiles');
 subplot(1,2,2);
 qqplot(portfolio_returns_simple);
-title('QQ Plot of Simple Returns');
-text(min(portfolio_returns_simple), max(portfolio_returns_simple), sprintf('Skewness = %.4f', skew_simple), 'FontSize',12, 'Color','b');
+xlabel('Theoretical Quantiles'); ylabel('Sample Quantiles');
+sgtitle('QQ Plots of Log Returns and Simple Returns');  % Added overall title
+% (Graph 6: QQ Plots of Log Returns and Simple Returns)
+saveas(gcf, fullfile('image', 'Graph6_QQPlots.png'));
+close(gcf);
 
 % 2.5 Jarque-Bera Test for Log Returns
 [JB_h, JB_p, JB_stat] = jbtest(portfolio_returns, 0.05);
@@ -162,45 +153,41 @@ fprintf('Jarque-Bera test (Log Returns): statistic = %.4f, p-value = %.4f\n', JB
 % 2.6 Empirical vs. Theoretical CDF Comparison (Log Returns)
 [f_emp, x_emp] = ecdf(portfolio_returns);
 f_theo = normcdf(x_emp, mean_ret, std_ret);
-figure('Color',[1 1 1]);
+figure;
 plot(x_emp, f_emp, 'b-', 'LineWidth', 1.5); hold on;
 plot(x_emp, f_theo, 'r--', 'LineWidth', 1.5);
 xlabel('Log Portfolio Returns'); ylabel('CDF');
-title('Empirical vs. Theoretical CDF of Log Returns');
 legend('Empirical CDF','Theoretical Normal CDF');
+title('Empirical vs. Theoretical CDF of Log Returns');  % Added title
+% (Graph 7: Empirical vs. Theoretical CDF of Log Returns)
+saveas(gcf, fullfile('image', 'Graph7_ECDF_vs_TheoreticalCDF.png'));
+close(gcf);
 
 % 2.7 Kolmogorov-Smirnov Test for Log Returns
 [h_ks, p_ks, ks_stat] = kstest(portfolio_returns, 'CDF', makedist('Normal','mu',mean_ret,'sigma',std_ret));
 fprintf('Kolmogorov-Smirnov test (Log Returns): statistic = %.4f, p-value = %.4f\n', ks_stat, p_ks);
 
-% 2.8 Ljung-Box Test for Autocorrelation (Log Returns)
-figure('Color',[1 1 1]);
+% 2.8 Ljung-Box Test for Autocorrelation of Log Returns
+figure;
 subplot(3,1,1);
 autocorr(portfolio_returns);
-title('Autocorrelation of Log Returns');
+xlabel('Lag'); ylabel('ACF');
 subplot(3,1,2);
 autocorr(abs(portfolio_returns));
-title('Autocorrelation of Absolute Log Returns');
+xlabel('Lag'); ylabel('ACF');
 subplot(3,1,3);
 autocorr(portfolio_returns.^2);
-title('Autocorrelation of Squared Log Returns');
-
-% 2.9 Variance Ratio Test (if available)
-if exist('vratiotest','file')
-    [h_vr, p_vr, stat_vr] = vratiotest(portfolio_returns);
-    fprintf('Variance Ratio Test (Log Returns): statistic = %.4f, p-value = %.4f\n', stat_vr, p_vr);
-else
-    fprintf('Variance Ratio Test function (vratiotest) not available.\n');
-end
+xlabel('Lag'); ylabel('ACF');
+sgtitle('Autocorrelation of Log Returns, Absolute and Squared Returns');  % Added overall title
+% (Graph 8: Autocorrelation of Log Returns, Absolute and Squared Returns)
+saveas(gcf, fullfile('image', 'Graph8_Autocorrelation_Log_Abs_Squared.png'));
+close(gcf);
 
 %% 3. 6-Month Rolling Window VaR Estimation and Backtesting
-% Define confidence levels and VaR methods.
 confidence_levels = [0.90, 0.99];
 var_results = struct();
-% Methods: HS, Gaussian, MHS, MonteCarlo
+% VaR methods: HS, Gaussian, MHS, MonteCarlo
 var_methods = {'HS', 'Gaussian', 'MHS', 'MonteCarlo'};
-
-% Set rolling window start and end dates.
 start_date_rolling = datetime('2014-07-01');
 end_date_analysis = dates_returns(end);
 current_date = start_date_rolling;
@@ -211,7 +198,6 @@ while current_date <= end_date_analysis
     if isstrprop(valid_date(1), 'digit')
         valid_date = ['d_' valid_date];
     end
-    % 6-month rolling window: from current_date - 6 months to current_date.
     start_window = current_date - calmonths(6);
     mask_window = (dates_returns >= start_window) & (dates_returns < current_date);
     rolling_returns = portfolio_returns(mask_window);
@@ -234,7 +220,6 @@ while current_date <= end_date_analysis
             end
         end
     else
-        % If insufficient data, assign NaN.
         for conf = 1:length(confidence_levels)
             for m = 1:length(var_methods)
                 var_results.(valid_date).(sprintf('%s_%.0f', var_methods{m}, round(confidence_levels(conf)*100))) = NaN;
@@ -292,7 +277,7 @@ for conf = 1:length(alpha_levels)
             results_backtest.(var_key).Kupiec_LR = LR_uc;
             results_backtest.(var_key).Kupiec_p = p_value_uc;
             
-            % Build hit sequence for Conditional Coverage Test.
+            % Conditional Coverage Test using hit sequence.
             hitSeq = zeros(T,1);
             for k = 1:T
                 valid_date = strrep(datestr(violation_dates(k), 'dd_mmm_yyyy'), '-', '_');
@@ -307,7 +292,6 @@ for conf = 1:length(alpha_levels)
                 end
             end
             
-            % Count transition frequencies for the hit sequence.
             n00 = 0; n01 = 0; n10 = 0; n11 = 0;
             for k = 2:T
                 if hitSeq(k-1)==0 && hitSeq(k)==0, n00 = n00 + 1; end
@@ -342,140 +326,6 @@ for conf = 1:length(alpha_levels)
 end
 
 fprintf('Backtesting evaluation complete.\n');
-
-%% 5. New Additions
-
-%% 5A. Violation Count Bar Chart by Period (for 90% and 99% Confidence)
-period_cutoff = datetime('12-31-2018', 'InputFormat', 'M-d-yyyy');
-methods = var_methods;
-conf_levels_to_plot = [0.90, 0.99];
-for c = 1:length(conf_levels_to_plot)
-    conf_level_plot = conf_levels_to_plot(c);
-    violation_counts_period = struct();
-    for m = 1:length(methods)
-        method = methods{m};
-        var_key = sprintf('%s_%.0f', method, round(conf_level_plot*100));
-        count1 = 0; count2 = 0;
-        for k = 1:length(violation_dates)
-            valid_date = strrep(datestr(violation_dates(k), 'dd_mmm_yyyy'), '-', '_');
-            if isstrprop(valid_date(1), 'digit')
-                valid_date = ['d_' valid_date];
-            end
-            if isfield(var_results, valid_date) && isfield(var_results.(valid_date), var_key)
-                VaR_est = var_results.(valid_date).(var_key);
-                if ~isnan(VaR_est) && (violation_returns(k) <= -VaR_est)
-                    if violation_dates(k) <= period_cutoff
-                        count1 = count1 + 1;
-                    else
-                        count2 = count2 + 1;
-                    end
-                end
-            end
-        end
-        violation_counts_period.(var_key).Period1 = count1;
-        violation_counts_period.(var_key).Period2 = count2;
-    end
-    method_names = fieldnames(violation_counts_period);
-    n_methods = length(method_names);
-    data_for_bar = zeros(n_methods,2);
-    for i = 1:n_methods
-        key = method_names{i};
-        data_for_bar(i,1) = violation_counts_period.(key).Period1;
-        data_for_bar(i,2) = violation_counts_period.(key).Period2;
-    end
-    figure('Color',[1 1 1]);
-    bar(data_for_bar);
-    set(gca, 'XTickLabel', method_names);
-    xlabel(sprintf('VaR Method (%.0f%% Confidence)', round(conf_level_plot*100)));
-    ylabel('Violation Count');
-    legend('Period 1 (<= 31-Dec-2018)', 'Period 2 (> 31-Dec-2018)', 'Location', 'best');
-    title(sprintf('Violation Count by Period for %.0f%% Confidence', round(conf_level_plot*100)));
-end
-
-%% 5B. Time Series VaR Plot with Log Returns and Violation Highlight (90% Confidence)
-% Extract sorted date fields from var_results.
-fields = fieldnames(var_results);
-date_nums = zeros(length(fields),1);
-for i = 1:length(fields)
-    f = fields{i};
-    if startsWith(f, 'd_')
-        f = f(3:end);
-    end
-    f_mod = upper(f);
-    date_nums(i) = datenum(f_mod, 'dd_mmm_yyyy');
-end
-[sorted_dates, sortIdx] = sort(date_nums);
-sorted_fields = fields(sortIdx);
-
-% Build time series for each VaR method at 90% confidence.
-VaR_series = struct();
-conf_level_target = 0.90;
-for m = 1:length(var_methods)
-    method = var_methods{m};
-    series = nan(length(sorted_fields), 1);
-    for i = 1:length(sorted_fields)
-        fname = sorted_fields{i};
-        key = sprintf('%s_%.0f', method, round(conf_level_target*100));
-        if isfield(var_results, fname) && isfield(var_results.(fname), key)
-            series(i) = var_results.(fname).(key);
-        end
-    end
-    VaR_series.(method) = series;
-end
-
-% Plot log returns and overlay VaR series with violation highlighting.
-figure('Color',[1 1 1]);
-plot(dates_returns, portfolio_returns, 'k-', 'LineWidth', 0.5); hold on;
-colors = {'b', 'r', 'g', 'm'};
-minLen = min(length(dates_returns), length(sorted_fields));
-for m = 1:length(var_methods)
-    method = var_methods{m};
-    series = VaR_series.(method);
-    for i = 1:minLen-1
-        % Highlight segment in red if a violation occurs.
-        if portfolio_returns(i) <= -series(i)
-            plot(dates_returns(i:i+1), -series(i:i+1), 'Color', 'r', 'LineWidth', 2);
-        else
-            plot(dates_returns(i:i+1), -series(i:i+1), 'Color', colors{m}, 'LineWidth', 1.5);
-        end
-    end
-end
-xlabel('Date'); ylabel('VaR (Absolute Value)');
-title('Time Series VaR (90% Confidence) with Log Returns Overlay');
-legend('Log Returns','HS','Gaussian','MHS','MonteCarlo','Location','best');
-hold off;
-
-%% 5C. Kupiec Test Results Tables
-% For 90% Confidence:
-kupiec_fields = fieldnames(results_backtest);
-KupiecData90 = [];
-MethodNames90 = {};
-for i = 1:length(kupiec_fields)
-    key = kupiec_fields{i};
-    if ~isempty(regexp(key, '_90$', 'once'))
-        KupiecData90 = [KupiecData90; results_backtest.(key).Kupiec_LR, results_backtest.(key).Kupiec_p];
-        MethodNames90{end+1} = key; %#ok<SAGROW>
-    end
-end
-KupiecTable90 = array2table(KupiecData90, 'VariableNames', {'Kupiec_LR', 'Kupiec_p'});
-KupiecTable90.Properties.RowNames = MethodNames90;
-disp('Kupiec Test Results (90% Confidence):');
-disp(KupiecTable90);
-
-% For 99% Confidence:
-KupiecData99 = [];
-MethodNames99 = {};
-for i = 1:length(kupiec_fields)
-    key = kupiec_fields{i};
-    if ~isempty(regexp(key, '_99$', 'once'))
-        KupiecData99 = [KupiecData99; results_backtest.(key).Kupiec_LR, results_backtest.(key).Kupiec_p];
-        MethodNames99{end+1} = key; %#ok<SAGROW>
-    end
-end
-KupiecTable99 = array2table(KupiecData99, 'VariableNames', {'Kupiec_LR', 'Kupiec_p'});
-KupiecTable99.Properties.RowNames = MethodNames99;
-disp('Kupiec Test Results (99% Confidence):');
-disp(KupiecTable99);
 
 %% 4. Additional Section: 120-Day Rolling Window VaR Estimation
 window = 120;         % 120 trading days window
@@ -516,7 +366,7 @@ Var_NonParametric_plot = [additional_rows; Var_NonParametric(:, VaR_level_index)
 Var_MHS_plot = [additional_rows; Var_MHS(:, VaR_level_index)];
 Var_MonteCarlo_plot = [additional_rows; Var_MonteCarlo(:, VaR_level_index)];
 
-figure('Color',[1 1 1])
+figure;
 plot(portfolio_returns, 'LineWidth', 0.25); hold on;
 plot(-Var_Parametric_plot, 'LineWidth', 1.5, 'LineStyle', '-.');
 plot(-Var_NonParametric_plot, 'LineWidth', 1.5, 'LineStyle', '--');
@@ -525,51 +375,145 @@ plot(-Var_MonteCarlo_plot, 'LineWidth', 1, 'LineStyle', '-');
 xlabel('Time (Days)','Interpreter','latex')
 ylabel('VaR / Portfolio Returns','Interpreter','latex')
 legend('Portfolio Returns','Parametric VaR','Non-Parametric VaR','Modified HS VaR','Monte Carlo VaR', 'Interpreter','latex')
-title('120-Day Rolling VaRs Over Time at 90% Confidence','Interpreter','latex')
-grid on;
-hold off;
+title('120-Day Rolling VaRs Over Time at 90% Confidence');  % Added title
+% (Graph 9: 120-Day Rolling VaRs Over Time at 90% Confidence)
+saveas(gcf, fullfile('image', 'Graph9_120DayRolling_VaR_90.png'));
+close(gcf);
 
 % Plot: VaR vs Confidence Level Comparison (for the first iteration) for 120-Day Window
-figure('Color',[1 1 1])
+figure;
 subplot(2,2,1)
 plot(confidence_interval, Var_Parametric(1,:), 'LineWidth', 0.5);
-title('Parametric VaR vs Confidence','Interpreter','latex')
-xlabel('Confidence Level','Interpreter','latex')
-ylabel('VaR','Interpreter','latex')
-grid on
-
+xlabel('Confidence Level'); ylabel('VaR'); grid on
 subplot(2,2,2)
 plot(confidence_interval, Var_NonParametric(1,:), 'LineWidth', 0.5);
-title('Non-Parametric VaR vs Confidence','Interpreter','latex')
-xlabel('Confidence Level','Interpreter','latex')
-ylabel('VaR','Interpreter','latex')
-grid on
-
+xlabel('Confidence Level'); ylabel('VaR'); grid on
 subplot(2,2,3)
 plot(confidence_interval, Var_MHS(1,:), 'LineWidth', 0.5);
-title('Modified HS VaR vs Confidence','Interpreter','latex')
-xlabel('Confidence Level','Interpreter','latex')
-ylabel('VaR','Interpreter','latex')
-grid on
-
+xlabel('Confidence Level'); ylabel('VaR'); grid on
 subplot(2,2,4)
 plot(confidence_interval, Var_MonteCarlo(1,:), 'LineWidth', 0.5);
-title('Monte Carlo VaR vs Confidence','Interpreter','latex')
-xlabel('Confidence Level','Interpreter','latex')
-ylabel('VaR','Interpreter','latex')
-grid on;
+xlabel('Confidence Level'); ylabel('VaR'); grid on
+sgtitle('VaR vs Confidence Level Comparison for 120-Day Window');  % Added overall title
+% (Graph 10: VaR vs Confidence Level Comparison for 120-Day Window)
+saveas(gcf, fullfile('image', 'Graph10_VaR_vs_Confidence_120Day.png'));
+close(gcf);
 
-%% End of Script
+%% 5. New Additions
+
+% 5A. Enlarged Histogram of the Tail Region of Log Returns
+tail_threshold = mean_ret - 2*std_ret;  % example threshold
+tail_data = portfolio_returns(portfolio_returns < tail_threshold);
+figure;
+histogram(tail_data, 50, 'Normalization','pdf');
+xlabel('Log Returns (Tail Region)'); ylabel('Density');
+title('Enlarged Histogram of Tail Region of Log Returns');  % Added title
+% (Graph 11: Enlarged Histogram of Tail Region of Log Returns)
+saveas(gcf, fullfile('image', 'Graph11_TailHistogram_LogReturns.png'));
+close(gcf);
+
+% 5B. Separate Autocorrelation Plots for Absolute and Squared Returns
+figure;
+autocorr(abs(portfolio_returns));
+xlabel('Lag'); ylabel('ACF');
+title('Autocorrelation of Absolute Log Returns');  % Added title
+% (Graph 12: Autocorrelation of Absolute Log Returns)
+saveas(gcf, fullfile('image', 'Graph12_ACF_AbsoluteReturns.png'));
+close(gcf);
+
+figure;
+autocorr(portfolio_returns.^2);
+xlabel('Lag'); ylabel('ACF');
+title('Autocorrelation of Squared Log Returns');  % Added title
+% (Graph 13: Autocorrelation of Squared Log Returns)
+saveas(gcf, fullfile('image', 'Graph13_ACF_SquaredReturns.png'));
+close(gcf);
+
+% 5C. Conditional Coverage Test Results Tables (Christoffersen's CC Test)
+kupiec_fields = fieldnames(results_backtest);
+% For 90% Confidence:
+ccData90 = [];
+MethodNames_cc90 = {};
+for i = 1:length(kupiec_fields)
+    key = kupiec_fields{i};
+    if ~isempty(regexp(key, '_90$', 'once'))
+        ccData90 = [ccData90; results_backtest.(key).ConditionalCoverage_LR, results_backtest.(key).ConditionalCoverage_p];
+        MethodNames_cc90{end+1} = key;
+    end
+end
+CC_Table90 = array2table(ccData90, 'VariableNames', {'CC_LR', 'CC_p'});
+CC_Table90.Properties.RowNames = MethodNames_cc90;
+disp('Conditional Coverage Test Results (90% Confidence):');
+disp(CC_Table90);
+% (Graph 14: Conditional Coverage Test Results Table for 90% Confidence)
+
+% For 99% Confidence:
+ccData99 = [];
+MethodNames_cc99 = {};
+for i = 1:length(kupiec_fields)
+    key = kupiec_fields{i};
+    if ~isempty(regexp(key, '_99$', 'once'))
+        ccData99 = [ccData99; results_backtest.(key).ConditionalCoverage_LR, results_backtest.(key).ConditionalCoverage_p];
+        MethodNames_cc99{end+1} = key;
+    end
+end
+CC_Table99 = array2table(ccData99, 'VariableNames', {'CC_LR', 'CC_p'});
+CC_Table99.Properties.RowNames = MethodNames_cc99;
+disp('Conditional Coverage Test Results (99% Confidence):');
+disp(CC_Table99);
+% (Graph 15: Conditional Coverage Test Results Table for 99% Confidence)
+
+% 5D. Probability Integral Transform (PIT) Analysis
+% Compute PIT based on Gaussian assumption for log returns.
+pit = normcdf(portfolio_returns, mean_ret, std_ret);
+[h_pit, pval_pit] = kstest(pit, 'CDF', makedist('Uniform',0,1));
+fprintf('PIT Kolmogorov-Smirnov Test: h = %d, p-value = %.4f\n', h_pit, pval_pit);
+figure;
+histogram(pit, 50, 'Normalization','pdf'); hold on;
+x_uni = linspace(0,1,100);
+plot(x_uni, ones(size(x_uni)), 'r-', 'LineWidth',2);
+xlabel('PIT Value'); ylabel('Density');
+title('Histogram of PIT with Uniform Density Overlay');  % Added title
+% (Graph 16: Histogram of PIT with Uniform Density Overlay)
+saveas(gcf, fullfile('image', 'Graph16_PIT_Histogram.png'));
+close(gcf);
+
+% 5E. VaR Violation Clustering Analysis
+% For demonstration, use 'Gaussian_90' violations.
+violation_indicator = zeros(length(violation_dates),1);
+for k = 1:length(violation_dates)
+    valid_date = strrep(datestr(violation_dates(k), 'dd_mmm_yyyy'), '-', '_');
+    if isstrprop(valid_date(1), 'digit')
+        valid_date = ['d_' valid_date];
+    end
+    var_key = 'Gaussian_90';
+    if isfield(var_results, valid_date) && isfield(var_results.(valid_date), var_key)
+        VaR_est = var_results.(valid_date).(var_key);
+        if ~isnan(VaR_est) && (violation_returns(k) <= -VaR_est)
+            violation_indicator(k) = 1;
+        end
+    end
+end
+figure;
+stem(violation_dates, violation_indicator, 'filled');
+xlabel('Date'); ylabel('Violation (1 if occurred)');
+title('VaR Violation Clustering Stem Plot');  % Added title
+% (Graph 17: VaR Violation Clustering Stem Plot)
+saveas(gcf, fullfile('image', 'Graph17_ViolationClustering.png'));
+close(gcf);
+
+%% 6. End of Script
 
 %% Function: calcVaR
 function VaR = calcVaR(returnData, confLevel, method)
-% calcVaR calculates a single VaR value for a given vector of returns, confidence level, and method.
+% calcVaR calculates a single VaR value for a given vector of returns,
+% a given confidence level, and the specified method.
 % Inputs:
 %   returnData - Vector of return data.
 %   confLevel  - Confidence level (e.g., 0.90 or 0.99).
 %   method     - VaR calculation method: 'HS', 'Gaussian', 'MHS', or 'MonteCarlo'.
 % Output:
-%   VaR        - The calculated VaR value (a scalar).
+%   VaR        - The calculated VaR value (scalar).
 %
 % For Modified HS, an EWMA-based time weighting is used.
 alpha = 1 - confLevel;  % Tail probability
@@ -584,7 +528,7 @@ switch method
     case 'MHS'
         % Modified Historical Simulation with EWMA weighting.
         T = length(returnData);
-        lambda = 0.94; % Decay factor
+        lambda = 0.94;
         weights = lambda.^( (T-1):-1:0 )';
         weights = weights / sum(weights);
         [sortedData, sortIdx] = sort(returnData);
@@ -593,7 +537,7 @@ switch method
         idx = find(cumWeights >= alpha, 1, 'first');
         VaR = -sortedData(idx);
     case 'MonteCarlo'
-        % Monte Carlo simulation approach: default 10,000 simulations.
+        % Monte Carlo simulation approach (10,000 simulations by default).
         mu = mean(returnData);
         sigma = std(returnData);
         sim_returns = normrnd(mu, sigma, 10000, 1);
