@@ -81,6 +81,8 @@ for i = 1:num_sim_decline
     dy_daily = normrnd(daily_mean, daily_std, h_decline, 1);
     % Compute cumulative YTM for each day (a 30-element vector)
     ytm_path = YTM + cumsum(dy_daily);
+    %bond price 89.1
+    %bond price -> 
     hit = false;
     % For each day, compute the bond price with remaining maturity = maturity - (d/360)
     for d = 1:h_decline
@@ -96,6 +98,24 @@ for i = 1:num_sim_decline
 end
 prob_decline_path = count_decline / num_sim_decline;
 fprintf('Probability of 10%% decline within 30 days (path simulation): %.4f\n', prob_decline_path);
+
+%% 1b) 10% Price Decline Probability via Distribution Method
+% Solve for the threshold yield (y_target) such that the bond price after 30 days equals the threshold (89.1).
+syms y_target positive
+eqn_target = bondPrice(y_target, 30) == threshold;
+sol_y = vpasolve(eqn_target, y_target, [YTM, 1]);  % search in a reasonable range (from current YTM to 1)
+y_target_val = double(sol_y);
+fprintf('Threshold YTM for 10%% price decline after 30 days: %.4f\n', y_target_val);
+
+% The required cumulative YTM change is:
+delta_y_required = y_target_val - YTM;
+fprintf('Required cumulative YTM change over 30 days: %.4f\n', delta_y_required);
+
+% Since the cumulative YTM change over 30 days ~ N(0, (daily_std*sqrt(30))^2),
+% the probability that the cumulative change is greater than or equal to delta_y_required is:
+prob_decline_dist = 1 - normcdf(delta_y_required, 0, daily_std*sqrt(30));
+fprintf('Probability of 10%% decline within 30 days (distribution method): %.4f\n', prob_decline_dist);
+
 
 %% 2) VaR Calculations using Exact, Delta, Delta-Gamma formulas
 num_horizons = length(horizons);
